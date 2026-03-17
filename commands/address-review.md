@@ -42,13 +42,31 @@ gh api repos/${REPO}/issues/comments/{COMMENT_ID} | jq '{body: .body, user: .use
 **If a specific review ID is provided (`#pullrequestreview-...`):**
 
 ```bash
-gh api repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments | jq '[.[] | {id: .id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login}]'
+# Review body (often contains summary feedback)
+gh api repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID} | jq '{id: .id, body: .body, state: .state, user: .user.login, html_url: .html_url}'
+
+# Inline comments for this review
+gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments | jq '[.[] | {id: .id, node_id: .node_id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id}]'
 ```
 
-**If only PR number is provided (fetch all PR review comments):**
+Include the review body as a general comment when it contains actionable feedback.
+
+**If only PR number is provided (fetch all PR comments):**
 
 ```bash
-gh api repos/${REPO}/pulls/{PR_NUMBER}/comments | jq '[.[] | {id: .id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id}]'
+# Inline code review comments
+gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/comments | jq '[.[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id}]'
+
+# General PR discussion comments (not tied to specific lines)
+gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq '[.[] | {id: .id, node_id: .node_id, type: "issue", body: .body, user: .user.login, html_url: .html_url}]'
+```
+
+For review comments, fetch review thread metadata and attach `thread_id` by matching each review comment's `node_id`:
+
+```bash
+OWNER=${REPO%/*}
+NAME=${REPO#*/}
+gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr={PR_NUMBER} -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq '[.data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'
 ```
 
 **Filtering comments:**
@@ -118,13 +136,7 @@ gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -f body="<response>"
 gh api repos/${REPO}/pulls/{PR_NUMBER}/comments/{COMMENT_ID}/replies -X POST -f body="<response>"
 ```
 
-**For standalone review comments (not in a thread):**
-
-```bash
-gh api repos/${REPO}/pulls/{PR_NUMBER}/comments -X POST -f body="<response>" -f commit_id="<COMMIT_SHA>" -f path="<FILE_PATH>" -f line=<LINE_NUMBER> -f side="RIGHT"
-```
-
-Note: `side` is required when using `line`. Use `"RIGHT"` for the PR commit side (most common) or `"LEFT"` for the base commit side.
+Use the `/replies` endpoint for all existing review comments, including standalone top-level comments.
 
 The response should briefly explain:
 
