@@ -104,7 +104,7 @@ Triage rules:
 
 ## Step 5: Create Todo List
 
-Create a task list with TaskCreate containing **only the `MUST-FIX` items**:
+Create a task list with TodoWrite containing **only the `MUST-FIX` items**:
 
 - One task per must-fix comment or deduplicated issue
 - Subject: `"{file}:{line} - {comment_summary} (@{username})"`
