@@ -1,6 +1,6 @@
 # claude-code-commands-skills-agents
 
-ShakaCode Team Shared Claude Code and Codex CLI Commands, Agents, Skills, and Tips.
+ShakaCode Team Shared Claude Code commands plus cross-tool prompts, agents, skills, and tips.
 
 ## Quick Install
 
@@ -37,6 +37,16 @@ For project-level sharing, copy to your project's `.claude/commands/` or `.claud
 | [`/optimize`](commands/optimize.md) | Analyze code for performance issues with structured recommendations |
 | [`/security-review`](commands/security-review.md) | Review code for security vulnerabilities (OWASP Top 10 checklist) |
 | [`/file-by-file-review`](commands/file-by-file-review.md) | Review massive PRs file-by-file with parallel subagents (credit: [Romex91](https://github.com/Romex91/claude-code-file-by-file-review)) |
+
+## Prompt Templates
+
+Use these when you want a reusable workflow outside Claude Code's slash-command system:
+
+| Prompt | Description |
+|--------|-------------|
+| [`address-review`](prompts/address-review.md) | Shared prompt for Codex, GPT, or another coding assistant that mirrors `/address-review` and falls back cleanly when terminal access is unavailable |
+
+Prompt templates are not auto-installed commands. For Codex, point `AGENTS.md` at the prompt you want used. For GPT, paste the prompt into a session or add it to your project or custom instructions.
 
 ## Agents
 
@@ -88,7 +98,8 @@ Starter templates for new projects:
 ## Contributing
 
 1. Add new commands to `commands/`
-2. Add new agents to `agents/`
-3. Add documentation to `docs/`
-4. Keep everything generic -- project-specific instructions belong in project CLAUDE.md files
-5. All files must end with a newline character
+2. Add new prompt templates to `prompts/` when the workflow targets Codex, GPT, or other non-Claude tools
+3. Add new agents to `agents/`
+4. Add documentation to `docs/`
+5. Keep everything generic -- project-specific instructions belong in project CLAUDE.md files
+6. All files must end with a newline character
