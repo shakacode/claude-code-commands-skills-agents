@@ -68,6 +68,23 @@ test/
 - Use parameterized queries for database access
 - Never log sensitive data (passwords, tokens, PII)
 
+## Review Workflow
+
+When addressing PR review comments (using `/address-review` or equivalent):
+
+- Wait for the first full review pass to finish before pushing follow-up commits
+- Batch review fixes into one follow-up push when practical -- do not create a new commit for each minor comment
+- Treat as blocking only: correctness bugs, failing tests, regressions, and clear inconsistencies with adjacent code
+- Verify reviewer claims locally before changing code in response to review comments
+- Deduplicate repeated bot comments before acting on them -- fix the underlying issue once, then resolve the duplicates
+
+## Shared Commands
+
+The `/address-review` command and other shared commands are synced from
+[claude-code-boosters](https://github.com/shakacode/claude-code-boosters).
+Do not edit `.claude/commands/address-review.md` directly in this project.
+Update the canonical copy in the boosters repo and re-sync.
+
 ## Common Mistakes to Avoid
 
 - [Things that AI agents frequently get wrong in this project]

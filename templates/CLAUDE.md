@@ -66,6 +66,16 @@ Always lint changed files before committing.
 - [e.g., "Use factories from test/factories/, not inline data"]
 - [e.g., "When changing source files, run corresponding test files"]
 
+## Shared Commands
+
+The following commands are synced from
+[claude-code-boosters](https://github.com/shakacode/claude-code-boosters):
+
+- `/address-review` -- Fetch PR review comments, triage, create todos, reply, and resolve threads
+
+Do not edit `.claude/commands/address-review.md` directly. Update the canonical
+copy in the boosters repo and re-sync with `bin/sync-commands`.
+
 ## Common Gotchas
 
 - [Things that trip up new developers or AI assistants]
