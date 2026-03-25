@@ -19,6 +19,10 @@ cp commands/*.md ~/.claude/commands/
 mkdir -p ~/.claude/agents
 cp agents/*.md ~/.claude/agents/
 
+# Install all skills
+mkdir -p ~/.claude/skills
+cp -r skills/* ~/.claude/skills/
+
 # Or install specific ones
 cp commands/self-review.md ~/.claude/commands/
 cp commands/merge-commit-msg.md ~/.claude/commands/
@@ -55,6 +59,26 @@ Prompt templates are not auto-installed commands. For Codex, point `AGENTS.md` a
 | [`pr-testing-agent`](agents/pr-testing-agent.md) | Identify and run only the tests affected by PR changes |
 
 Install to `~/.claude/agents/` (personal) or `.claude/agents/` (project).
+
+## Skills
+
+Skills are invoked via `/skill-name` in Claude Code. Install by adding this repo via `--add-dir`:
+
+```bash
+claude --add-dir /path/to/claude-code-commands-skills-agents/skills
+```
+
+Or configure in your project's `.claude/settings.json`:
+
+```json
+{
+  "additionalDirectories": ["/path/to/claude-code-commands-skills-agents/skills"]
+}
+```
+
+| Skill | Description |
+| --- | --- |
+| [`/docs`](skills/docs/SKILL.md) | Generate, audit, or update project documentation to a professional open-source standard. Covers README, quick start, API reference, config reference, migration guides, troubleshooting, LLMs.txt, and inline code docs (YARD/TSDoc). Benchmarked against Inertia Rails and Vite Ruby documentation. |
 
 ## Templates
 
@@ -150,6 +174,7 @@ See the [templates/](templates/) directory for starter `CLAUDE.md` and `AGENTS.m
 1. Add new commands to `commands/`
 2. Add new prompt templates to `prompts/` when the workflow targets Codex, GPT, or other non-Claude tools
 3. Add new agents to `agents/`
-4. Add documentation to `docs/`
-5. Keep everything generic -- project-specific instructions belong in project CLAUDE.md files
-6. All files must end with a newline character
+4. Add new skills to `skills/`
+5. Add documentation to `docs/`
+6. Keep everything generic -- project-specific instructions belong in project CLAUDE.md files
+7. All files must end with a newline character
