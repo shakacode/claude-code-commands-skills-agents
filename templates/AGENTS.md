@@ -81,7 +81,7 @@ When addressing PR review comments (using `/address-review` or equivalent):
 ## Shared Commands
 
 The `/address-review` command and other shared commands are synced from
-[claude-code-boosters](https://github.com/shakacode/claude-code-boosters).
+[claude-code-commands-skills-agents](https://github.com/shakacode/claude-code-commands-skills-agents).
 Do not edit `.claude/commands/address-review.md` directly in this project.
 Update the canonical copy in the boosters repo and re-sync.
 

@@ -69,7 +69,7 @@ Always lint changed files before committing.
 ## Shared Commands
 
 The following commands are synced from
-[claude-code-boosters](https://github.com/shakacode/claude-code-boosters):
+[claude-code-commands-skills-agents](https://github.com/shakacode/claude-code-commands-skills-agents):
 
 - `/address-review` -- Fetch PR review comments, triage, create todos, reply, and resolve threads
 

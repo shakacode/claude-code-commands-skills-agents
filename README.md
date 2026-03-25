@@ -104,13 +104,13 @@ This repo is the canonical source for shared commands like `/address-review`. To
 
 ```bash
 # From your project root
-BOOSTERS=~/.claude/claude-code-boosters
+BOOSTERS=~/.claude/claude-code-commands-skills-agents
 
 # Clone (or pull if already cloned)
 if [ -d "$BOOSTERS" ]; then
   git -C "$BOOSTERS" pull --rebase
 else
-  git clone https://github.com/shakacode/claude-code-boosters.git "$BOOSTERS"
+  git clone https://github.com/shakacode/claude-code-commands-skills-agents.git "$BOOSTERS"
 fi
 
 # Copy the commands you want into your project
@@ -138,7 +138,7 @@ Add this to your project's `CLAUDE.md` or `AGENTS.md` so agents know where share
 ## Shared Commands
 
 The `/address-review` command is synced from
-[claude-code-boosters](https://github.com/shakacode/claude-code-boosters).
+[claude-code-commands-skills-agents](https://github.com/shakacode/claude-code-commands-skills-agents).
 Do not edit `.claude/commands/address-review.md` directly — update the
 canonical copy in the boosters repo and re-sync.
 ```

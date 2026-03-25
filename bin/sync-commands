@@ -18,7 +18,7 @@ COMMANDS_DIR="$REPO_ROOT/commands"
 if [ $# -lt 1 ]; then
   echo "Usage: $(basename "$0") <target-project-path> [command-name]"
   echo ""
-  echo "Syncs commands from claude-code-boosters into a project."
+  echo "Syncs commands from claude-code-commands-skills-agents into a project."
   echo ""
   echo "Examples:"
   echo "  $(basename "$0") ~/projects/my-app"
