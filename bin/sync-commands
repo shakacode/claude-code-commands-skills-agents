@@ -38,6 +38,7 @@ TARGET_DIR="$TARGET/.claude/commands"
 mkdir -p "$TARGET_DIR"
 
 if [ -n "$COMMAND" ]; then
+  COMMAND="${COMMAND%.md}"   # strip accidental .md suffix
   SOURCE="$COMMANDS_DIR/${COMMAND}.md"
   if [ ! -f "$SOURCE" ]; then
     echo "Error: command not found: $SOURCE"
