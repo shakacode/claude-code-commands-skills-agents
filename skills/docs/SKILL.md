@@ -7,10 +7,17 @@ description: Generate, audit, or update project documentation to a professional 
 
 Generate and maintain documentation that meets or exceeds the standard set by the best open-source Rails/JS projects (Inertia Rails, Vite Ruby, Rails itself).
 
-## Before You Start
+## Reference: Quality Standard
 
-1. Read `references/quality-standard.md` in this skill directory to understand the bar we are targeting.
-2. Read `references/templates.md` for structural templates by doc type.
+!`cat "$(dirname "$0")/references/quality-standard.md"`
+
+## Reference: Documentation Templates
+
+!`cat "$(dirname "$0")/references/templates.md"`
+
+## Reference: Competitive Landscape
+
+!`cat "$(dirname "$0")/references/competitive-landscape.md"`
 
 ## Workflow
 
@@ -18,7 +25,7 @@ Generate and maintain documentation that meets or exceeds the standard set by th
 
 - Scan the repo for existing docs: `docs/`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, inline code comments, Wiki, and any hosted doc site config (VitePress, Docusaurus, Jekyll, etc.)
 - Identify what exists, what is outdated, and what is missing
-- Compare against the quality checklist in `references/quality-standard.md`
+- Compare against the Quality Standard reference above
 
 ### Step 2: Determine scope
 
@@ -119,7 +126,7 @@ When invoked as `/docs <target>`:
 - If `<target>` is a file path: generate/update docs FOR that code file (inline comments, module-level docs, method docs)
 - If `<target>` is a directory: generate/update docs for the entire module
 - If `<target>` is a doc type keyword (e.g., "readme", "api", "quickstart", "migration", "troubleshooting", "llms.txt", "audit"): generate that specific doc type
-- If `<target>` is "audit": run a full gap analysis against `references/quality-standard.md` and report findings
+- If `<target>` is "audit": run a full gap analysis against the Quality Standard reference above and report findings
 
 ## Language-Specific Conventions
 
