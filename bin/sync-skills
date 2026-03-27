@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#
+# Sync skills from this repo into a target project's .claude/skills/ directory.
+#
+# Usage:
+#   ./bin/sync-skills <target-project-path> [skill-name]
+#
+# Examples:
+#   ./bin/sync-skills ~/projects/my-app          # Sync all skills
+#   ./bin/sync-skills ~/projects/my-app docs      # Sync one skill
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SKILLS_DIR="$REPO_ROOT/skills"
+
+if [ $# -lt 1 ]; then
+  echo "Usage: $(basename "$0") <target-project-path> [skill-name]"
+  echo ""
+  echo "Syncs skills from claude-code-commands-skills-agents into a project."
+  echo ""
+  echo "Examples:"
+  echo "  $(basename "$0") ~/projects/my-app"
+  echo "  $(basename "$0") ~/projects/my-app docs"
+  exit 1
+fi
+
+TARGET="$1"
+SKILL="${2:-}"
+
+if [ ! -d "$TARGET" ]; then
+  echo "Error: target directory does not exist: $TARGET"
+  exit 1
+fi
+
+TARGET_DIR="$TARGET/.claude/skills"
+mkdir -p "$TARGET_DIR"
+
+if [ -n "$SKILL" ]; then
+  SOURCE="$SKILLS_DIR/$SKILL"
+  if [ ! -d "$SOURCE" ]; then
+    echo "Error: skill not found: $SOURCE"
+    echo "Available skills:"
+    for d in "$SKILLS_DIR"/*/; do
+      [ -d "$d" ] && echo "  $(basename "$d")"
+    done
+    exit 1
+  fi
+  cp -r "$SOURCE" "$TARGET_DIR/"
+  echo "Synced $SKILL -> $TARGET_DIR/$SKILL/"
+else
+  for d in "$SKILLS_DIR"/*/; do
+    [ -d "$d" ] || continue
+    SKILL_NAME="$(basename "$d")"
+    cp -r "$d" "$TARGET_DIR/"
+    echo "Synced $SKILL_NAME -> $TARGET_DIR/$SKILL_NAME/"
+  done
+fi
+
+echo ""
+echo "Done. Skills are now in $TARGET_DIR/"
+echo ""
+echo "To use skills, add the skills directory via --add-dir or settings.json:"
+echo "  claude --add-dir $TARGET_DIR"
+echo "  Or add to .claude/settings.json: {\"additionalDirectories\": [\"$TARGET_DIR\"]}"
