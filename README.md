@@ -104,6 +104,7 @@ Starter templates for new projects:
 | Script | Description |
 |--------|-------------|
 | [`bin/sync-commands`](bin/sync-commands) | Sync commands from this repo into a target project's `.claude/commands/` |
+| [`bin/sync-skills`](bin/sync-skills) | Sync skills from this repo into a target project's `.claude/skills/` |
 | [`bin/chrome-mcp`](bin/chrome-mcp) | Launch Chrome with a separate profile for MCP browser debugging |
 | `bin/set-review-instructions` | Initialize file-by-file review with instructions and changed file list |
 | `bin/print-git-diff` | Print diff, before/after, and review instructions for a single file |
@@ -120,9 +121,9 @@ Starter templates for new projects:
 | [Claude Code Review](.github/workflows/claude-code-review.yml) | Automatic PR review on open/sync |
 | [Claude Code](.github/workflows/claude.yml) | Respond to `@claude` mentions in issues/PRs |
 
-## Syncing Commands to Your Project
+## Syncing to Your Project
 
-This repo is the canonical source for shared commands like `/address-review`. To keep a project in sync:
+This repo is the canonical source for shared commands and skills. Use the sync scripts to keep a project up to date.
 
 ### One-Time Setup
 
@@ -144,7 +145,7 @@ cp "$BOOSTERS/commands/address-review.md" .claude/commands/
 
 ### Keeping Up to Date
 
-Run `bin/sync-commands` from this repo to pull the latest commands into a target project:
+Run the sync scripts from this repo to pull the latest commands or skills into a target project:
 
 ```bash
 # Sync all commands to a project
@@ -152,6 +153,12 @@ Run `bin/sync-commands` from this repo to pull the latest commands into a target
 
 # Sync a specific command
 ./bin/sync-commands ~/projects/my-app address-review
+
+# Sync all skills to a project
+./bin/sync-skills ~/projects/my-app
+
+# Sync a specific skill
+./bin/sync-skills ~/projects/my-app docs
 ```
 
 ### For AI Agents in Consuming Repos
@@ -159,12 +166,12 @@ Run `bin/sync-commands` from this repo to pull the latest commands into a target
 Add this to your project's `CLAUDE.md` or `AGENTS.md` so agents know where shared commands come from:
 
 ```markdown
-## Shared Commands
+## Shared Commands and Skills
 
-The `/address-review` command is synced from
+Commands and skills are synced from
 [claude-code-commands-skills-agents](https://github.com/shakacode/claude-code-commands-skills-agents).
-Do not edit `.claude/commands/address-review.md` directly — update the
-canonical copy in the boosters repo and re-sync.
+Do not edit `.claude/commands/` or `.claude/skills/` directly — update the
+canonical copies in the boosters repo and re-sync.
 ```
 
 See the [templates/](templates/) directory for starter `CLAUDE.md` and `AGENTS.md` files that include this pattern.
