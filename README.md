@@ -30,7 +30,7 @@ For project-level sharing, copy to your project's `.claude/commands/` or `.claud
 
 | Command | Description |
 |---------|-------------|
-| [`/address-review`](commands/address-review.md) | Fetch GitHub PR review comments and create todos to address them |
+| [`/address-review`](commands/address-review.md) | Fetch GitHub PR review comments, triage them, create todos for must-fix items, reply to comments, and resolve addressed threads |
 | [`/review-all-prs`](commands/review-all-prs.md) | Review all open PRs or a specific PR, post reviews to GitHub |
 | [`/self-review`](commands/self-review.md) | Comprehensive self-review of uncommitted changes before creating a PR |
 | [`/merge-commit-msg`](commands/merge-commit-msg.md) | Generate a structured merge commit message from PR changes |
@@ -79,6 +79,7 @@ Starter templates for new projects:
 
 | Script | Description |
 |--------|-------------|
+| [`bin/sync-commands`](bin/sync-commands) | Sync commands from this repo into a target project's `.claude/commands/` |
 | [`bin/chrome-mcp`](bin/chrome-mcp) | Launch Chrome with a separate profile for MCP browser debugging |
 | `bin/set-review-instructions` | Initialize file-by-file review with instructions and changed file list |
 | `bin/print-git-diff` | Print diff, before/after, and review instructions for a single file |
@@ -94,6 +95,55 @@ Starter templates for new projects:
 |----------|-------------|
 | [Claude Code Review](.github/workflows/claude-code-review.yml) | Automatic PR review on open/sync |
 | [Claude Code](.github/workflows/claude.yml) | Respond to `@claude` mentions in issues/PRs |
+
+## Syncing Commands to Your Project
+
+This repo is the canonical source for shared commands like `/address-review`. To keep a project in sync:
+
+### One-Time Setup
+
+```bash
+# From your project root
+BOOSTERS=~/.claude/claude-code-commands-skills-agents
+
+# Clone (or pull if already cloned)
+if [ -d "$BOOSTERS" ]; then
+  git -C "$BOOSTERS" pull --rebase
+else
+  git clone https://github.com/shakacode/claude-code-commands-skills-agents.git "$BOOSTERS"
+fi
+
+# Copy the commands you want into your project
+mkdir -p .claude/commands
+cp "$BOOSTERS/commands/address-review.md" .claude/commands/
+```
+
+### Keeping Up to Date
+
+Run `bin/sync-commands` from this repo to pull the latest commands into a target project:
+
+```bash
+# Sync all commands to a project
+./bin/sync-commands ~/projects/my-app
+
+# Sync a specific command
+./bin/sync-commands ~/projects/my-app address-review
+```
+
+### For AI Agents in Consuming Repos
+
+Add this to your project's `CLAUDE.md` or `AGENTS.md` so agents know where shared commands come from:
+
+```markdown
+## Shared Commands
+
+The `/address-review` command is synced from
+[claude-code-commands-skills-agents](https://github.com/shakacode/claude-code-commands-skills-agents).
+Do not edit `.claude/commands/address-review.md` directly — update the
+canonical copy in the boosters repo and re-sync.
+```
+
+See the [templates/](templates/) directory for starter `CLAUDE.md` and `AGENTS.md` files that include this pattern.
 
 ## Contributing
 

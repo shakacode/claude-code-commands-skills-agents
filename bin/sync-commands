@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# Sync commands from this repo into a target project's .claude/commands/ directory.
+#
+# Usage:
+#   ./bin/sync-commands <target-project-path> [command-name]
+#
+# Examples:
+#   ./bin/sync-commands ~/projects/my-app              # Sync all commands
+#   ./bin/sync-commands ~/projects/my-app address-review  # Sync one command
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+COMMANDS_DIR="$REPO_ROOT/commands"
+
+if [ $# -lt 1 ]; then
+  echo "Usage: $(basename "$0") <target-project-path> [command-name]"
+  echo ""
+  echo "Syncs commands from claude-code-commands-skills-agents into a project."
+  echo ""
+  echo "Examples:"
+  echo "  $(basename "$0") ~/projects/my-app"
+  echo "  $(basename "$0") ~/projects/my-app address-review"
+  exit 1
+fi
+
+TARGET="$1"
+COMMAND="${2:-}"
+
+if [ ! -d "$TARGET" ]; then
+  echo "Error: target directory does not exist: $TARGET"
+  exit 1
+fi
+
+TARGET_DIR="$TARGET/.claude/commands"
+mkdir -p "$TARGET_DIR"
+
+if [ -n "$COMMAND" ]; then
+  COMMAND="${COMMAND%.md}"   # strip accidental .md suffix
+  SOURCE="$COMMANDS_DIR/${COMMAND}.md"
+  if [ ! -f "$SOURCE" ]; then
+    echo "Error: command not found: $SOURCE"
+    echo "Available commands:"
+    ls "$COMMANDS_DIR"/*.md | xargs -I{} basename {} .md | sed 's/^/  /'
+    exit 1
+  fi
+  cp "$SOURCE" "$TARGET_DIR/"
+  echo "Synced $COMMAND -> $TARGET_DIR/${COMMAND}.md"
+else
+  for f in "$COMMANDS_DIR"/*.md; do
+    cp "$f" "$TARGET_DIR/"
+    echo "Synced $(basename "$f" .md) -> $TARGET_DIR/$(basename "$f")"
+  done
+fi
+
+echo ""
+echo "Done. Commands are now in $TARGET_DIR/"
