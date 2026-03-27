@@ -7,17 +7,13 @@ description: Generate, audit, or update project documentation to a professional 
 
 Generate and maintain documentation that meets or exceeds the standard set by the best open-source Rails/JS projects (Inertia Rails, Vite Ruby, Rails itself).
 
-## Reference: Quality Standard
+## Before You Start
 
-!`cat "$(dirname "$0")/references/quality-standard.md"`
+Read these reference files (located in the `references/` subdirectory next to this SKILL.md file) before proceeding:
 
-## Reference: Documentation Templates
-
-!`cat "$(dirname "$0")/references/templates.md"`
-
-## Reference: Competitive Landscape
-
-!`cat "$(dirname "$0")/references/competitive-landscape.md"`
+1. **Quality Standard** — `references/quality-standard.md` — tiered audit checklist (Must-Have / Expected / Differentiator)
+2. **Documentation Templates** — `references/templates.md` — structural skeletons for each doc type
+3. **Competitive Landscape** — `references/competitive-landscape.md` — benchmarks against peer projects
 
 ## Workflow
 

@@ -19,10 +19,6 @@ cp commands/*.md ~/.claude/commands/
 mkdir -p ~/.claude/agents
 cp agents/*.md ~/.claude/agents/
 
-# Install all skills
-mkdir -p ~/.claude/skills
-cp -r skills/* ~/.claude/skills/
-
 # Or install specific ones
 cp commands/self-review.md ~/.claude/commands/
 cp commands/merge-commit-msg.md ~/.claude/commands/
