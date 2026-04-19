@@ -54,7 +54,7 @@ For full-PR scans (plain PR number or PR URL with no specific review/comment anc
 Fetch the latest summary comment before collecting review data:
 
 ```bash
-gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -s '[.[].[] | select(((.body // "") | contains("<!-- address-review-summary -->"))) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last'
+gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -s '[.[].[] | select((.body // "") | contains("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last'
 ```
 
 Cutoff rules:
@@ -89,7 +89,7 @@ Include the review body as a general comment when it contains actionable feedbac
 
 ```bash
 # Review summary bodies (can contain actionable feedback even without inline comments)
-gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, submitted_at: .submitted_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, created_at: .submitted_at, html_url: .html_url}]'
 
 # Inline code review comments
 gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
@@ -340,6 +340,7 @@ else
     SECTION_CONTENT="${SECTION_CONTENT}${section}"
   done
   issue_body_file="$(mktemp)"
+  trap 'rm -f "${issue_body_file}"' EXIT
   {
     printf '## Deferred review feedback from PR #%s\n\n' "${PR_NUMBER}"
     printf 'These items were triaged during review and deferred for follow-up.\n\n'
@@ -349,7 +350,6 @@ else
   } > "${issue_body_file}"
 
   gh issue create --repo "${REPO}" --title "Follow-up: Review feedback from PR #${PR_NUMBER}" --body-file "${issue_body_file}"
-  rm -f "${issue_body_file}"
 fi
 ```
 
@@ -382,6 +382,7 @@ Suggested structure:
 
 ```bash
 summary_body_file="$(mktemp)"
+trap 'rm -f "${summary_body_file}"' EXIT
 {
   printf '<!-- address-review-summary -->\n'
   printf '## Address-review summary\n\n'
@@ -396,8 +397,7 @@ summary_body_file="$(mktemp)"
   printf 'Next default scan starts after this comment. Say `check all reviews` to rescan the full PR.\n'
 } > "${summary_body_file}"
 
-gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST --input "${summary_body_file}"
-rm -f "${summary_body_file}"
+gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -F body=@"${summary_body_file}"
 ```
 
 Use exact dates/timestamps in this comment when referring to the cutoff or scan window.
