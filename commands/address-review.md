@@ -6,18 +6,7 @@ Fetch review comments from a GitHub PR in this repository, triage them, and crea
 
 # Instructions
 
-## Step 1: Determine the Repository
-
-If the user input is a full GitHub URL, extract `org/repo` from the URL and use that as `REPO`.
-Otherwise, detect the repository from the current checkout:
-
-```bash
-REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-```
-
-If this command fails, ensure `gh` CLI is installed and authenticated (`gh auth status`).
-
-## Step 2: Parse User Input
+## Step 1: Parse User Input
 
 The user's input is: $ARGUMENTS
 
@@ -41,7 +30,18 @@ Then extract the PR number and optional review/comment ID from the remaining inp
 
 - Extract org/repo from URL path: `github.com/{org}/{repo}/pull/{PR_NUMBER}`
 - Extract fragment ID after `#` (e.g., `pullrequestreview-123456789` → `123456789`)
-- If a full GitHub URL is provided, use the org/repo from the URL instead of the current repo
+- If a full GitHub URL is provided, capture the URL's `org/repo` now so Step 2 can use it without calling `gh repo view`.
+
+## Step 2: Determine the Repository
+
+- If Step 1 extracted `org/repo` from a full GitHub URL, use that as `REPO`.
+- Otherwise, detect the repository from the current checkout:
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+```
+
+If `gh repo view` fails, ensure `gh` CLI is installed and authenticated (`gh auth status`).
 
 ## Step 3: Determine Scan Window and Summary Cutoff
 
@@ -51,17 +51,21 @@ For full-PR scans (plain PR number or PR URL with no specific review/comment anc
 - If the user explicitly said `check all reviews`, ignore the cutoff and scan the full PR history.
 - If the input is a specific review URL or specific issue-comment URL, fetch that exact target even if it predates the latest summary comment.
 
-Fetch the latest summary comment before collecting review data:
+Fetch the latest summary comment before collecting review data. Extract only the timestamp, guarding against the empty-array case (`jq ... | last` emits JSON `null` when nothing matches):
 
 ```bash
-gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -s '[.[].[] | select((.body // "") | contains("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last'
+REVIEW_CUTOFF_AT=$(
+  gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments \
+    | jq -rs '[.[].[] | select((.body // "") | contains("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end'
+)
+# Empty string → no prior summary comment; scan full PR history.
 ```
 
 Cutoff rules:
 
-- If a summary comment exists and `CHECK_ALL_REVIEWS` is false, set `REVIEW_CUTOFF_AT` to that comment's `created_at` timestamp.
+- `REVIEW_CUTOFF_AT` is empty when no summary comment exists; treat that as "scan full PR history" and do not filter by timestamp.
+- If `REVIEW_CUTOFF_AT` is non-empty and `CHECK_ALL_REVIEWS` is false, use it as the cutoff.
 - Use exact timestamps in user-facing status updates, for example: "Scanning review activity after 2026-04-01T20:14:33Z."
-- If no summary comment exists, scan the full PR history.
 - When a cutoff is active, keep enough older thread context to understand new replies, but only triage items whose own timestamp or latest thread activity is after `REVIEW_CUTOFF_AT`.
 - If no items survive the cutoff, say that no new review feedback was found since the last summary comment and remind the user they can say `check all reviews` to rescan the full PR.
 
@@ -223,6 +227,9 @@ Present the requested items with full context and ask the user for a decision on
 
 Post rationale replies to the specified items explaining why they are being deferred or skipped. By default, do not resolve threads in `r` unless the user explicitly asks to resolve them (for example, `r3,5 + resolve`). Accept only `SKIPPED`/`DISCUSS` item numbers, ranges, `r all skipped`, or `r all discuss`. If the selection includes any `MUST-FIX` item (including `r all must-fix`), do not post replies; direct the user to `f` or explicit deferral (`f+i` / `m`).
 
+- Bare `r` (with no items and no `all` qualifier) is ambiguous. Do not reply to anything. Prompt the user to specify item numbers or ranges, or one of `r all skipped` / `r all discuss`.
+- Bare `r all` (without `skipped` or `discuss`) is also ambiguous. Do not reply to anything. Respond with: `"r all" is ambiguous — use "r all skipped", "r all discuss", or run both: "r all skipped" then "r all discuss"`.
+
 ### Action `m` — Merge as-is
 
 1. Create a follow-up GitHub issue (see Step 9) bundling `MUST-FIX`, `DISCUSS`, and non-trivial `SKIPPED` items.
@@ -320,12 +327,16 @@ MUST_FIX_BLOCK="${MUST_FIX_SECTION}"
 
 DISCUSS_SECTION=""
 if [ -n "${DISCUSS_ITEMS}" ]; then
-  printf -v DISCUSS_SECTION '### Discuss items\n%s\n' "${DISCUSS_ITEMS}"
+  DISCUSS_SECTION="### Discuss items
+${DISCUSS_ITEMS}
+"
 fi
 
 SKIPPED_SECTION=""
 if [ -n "${SKIPPED_ITEMS}" ]; then
-  printf -v SKIPPED_SECTION '### Skipped items (non-trivial)\n%s\n' "${SKIPPED_ITEMS}"
+  SKIPPED_SECTION="### Skipped items (non-trivial)
+${SKIPPED_ITEMS}
+"
 fi
 
 if [ -z "${MUST_FIX_BLOCK}${DISCUSS_SECTION}${SKIPPED_SECTION}" ]; then
@@ -382,7 +393,10 @@ Suggested structure:
 
 ```bash
 summary_body_file="$(mktemp)"
-trap 'rm -f "${summary_body_file}"' EXIT
+# Include ${issue_body_file:-} so this trap also cleans up the Step 9 temp file
+# when `f+i` runs both steps in the same shell (each `trap ... EXIT` replaces
+# the previous handler in bash).
+trap 'rm -f "${issue_body_file:-}" "${summary_body_file}"' EXIT
 {
   printf '<!-- address-review-summary -->\n'
   printf '## Address-review summary\n\n'
