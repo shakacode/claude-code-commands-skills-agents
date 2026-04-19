@@ -54,7 +54,7 @@ For full-PR scans (plain PR number or PR URL with no specific review/comment anc
 Fetch the latest summary comment before collecting review data:
 
 ```bash
-gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -s '[.[].[] | select(((.body // "") | contains("<!-- address-review-summary -->"))) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last'
+gh api --paginate repos/${REPO}/issues/${PR_NUMBER}/comments | jq -s '[.[].[] | select(((.body // "") | contains("<!-- address-review-summary -->"))) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last'
 ```
 
 Cutoff rules:
@@ -70,17 +70,17 @@ Cutoff rules:
 **If a specific issue comment ID is provided (`#issuecomment-...`):**
 
 ```bash
-gh api repos/${REPO}/issues/comments/{COMMENT_ID} | jq '{body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}'
+gh api repos/${REPO}/issues/comments/${COMMENT_ID} | jq '{body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}'
 ```
 
 **If a specific review ID is provided (`#pullrequestreview-...`):**
 
 ```bash
 # Review body (often contains summary feedback)
-gh api repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID} | jq '{id: .id, body: .body, state: .state, user: .user.login, submitted_at: .submitted_at, html_url: .html_url}'
+gh api repos/${REPO}/pulls/${PR_NUMBER}/reviews/${REVIEW_ID} | jq '{id: .id, body: .body, state: .state, user: .user.login, submitted_at: .submitted_at, html_url: .html_url}'
 
 # Inline comments for this review
-gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/reviews/${REVIEW_ID}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
 ```
 
 Include the review body as a general comment when it contains actionable feedback. When the review body contains actionable feedback, note that it cannot be replied to via the `/replies` endpoint — responses to review summary bodies must be posted as general PR comments (see Step 8).
@@ -89,13 +89,13 @@ Include the review body as a general comment when it contains actionable feedbac
 
 ```bash
 # Review summary bodies (can contain actionable feedback even without inline comments)
-gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, submitted_at: .submitted_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, submitted_at: .submitted_at, html_url: .html_url}]'
 
 # Inline code review comments
-gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
 
 # General PR discussion comments (not tied to specific lines)
-gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "issue", body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/issues/${PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "issue", body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}]'
 ```
 
 Include actionable review summary bodies from `/pulls/{PR_NUMBER}/reviews` as additional general comments. Like specific review bodies, they cannot be replied to via the `/replies` endpoint and must be answered as general PR comments (see Step 8).
@@ -103,7 +103,8 @@ Include actionable review summary bodies from `/pulls/{PR_NUMBER}/reviews` as ad
 When `REVIEW_CUTOFF_AT` is set for a full-PR scan:
 
 - Fetch the full datasets above so you keep older context for unresolved threads.
-- Filter issue comments and review summaries to items created after `REVIEW_CUTOFF_AT`.
+- Filter issue comments by `created_at > REVIEW_CUTOFF_AT`.
+- Filter review summaries by `submitted_at > REVIEW_CUTOFF_AT` (review summary objects from `/pulls/{PR_NUMBER}/reviews` expose `submitted_at`, not `created_at`).
 - For inline review threads, keep an unresolved thread only when at least one comment in that thread has `created_at > REVIEW_CUTOFF_AT`.
 - Use the thread's top-level comment as the triage item, and use newer replies in that thread as the latest context.
 - Do not let older comments with no new activity re-enter triage unless the user asked for `check all reviews`.
@@ -113,7 +114,7 @@ When `REVIEW_CUTOFF_AT` is set for a full-PR scan:
 ```bash
 OWNER=${REPO%/*}
 NAME=${REPO#*/}
-gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr={PR_NUMBER} -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'
+gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr=${PR_NUMBER} -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'
 ```
 
 **Filtering comments:**
@@ -196,8 +197,8 @@ Do not post the PR summary checkpoint during this triage-only phase. Post it onl
 
 ### Action `f` — Fix and merge-ready
 
-1. Address all `MUST-FIX` items (make code changes, run checks). If there are no `MUST-FIX` items, skip directly to discuss/skipped handling.
-2. If local changes exist, commit and then ask for push confirmation before pushing. If there are no local changes, skip commit/push and continue decision flow.
+1. Address all `MUST-FIX` items (make code changes, run checks). Skip directly to discuss/skipped handling when there are no `MUST-FIX` items.
+2. Commit any local changes and ask for push confirmation before pushing; continue the decision flow when there are no local changes to commit.
 3. Reply to each addressed comment explaining the fix.
 4. Resolve the corresponding review threads.
 5. If `SKIPPED` items exist, ask for explicit confirmation before posting rationale replies and resolving those threads (for example: "Reply/resolve 3 skipped items? y/n").
@@ -207,11 +208,11 @@ Do not post the PR summary checkpoint during this triage-only phase. Post it onl
 
 ### Action `f+i` — Fix, follow-up issue, and merge-ready
 
-1. Do everything in `f` for `MUST-FIX` items. If there are no `MUST-FIX` items, skip the fix phase and continue with deferred-item handling.
+1. Do everything in `f` for `MUST-FIX` items; skip the fix phase and continue with deferred-item handling when there are no `MUST-FIX` items.
 2. Create a **follow-up GitHub issue** (see Step 9) bundling all `DISCUSS` and non-trivial `SKIPPED` items.
 3. For each deferred item in the follow-up issue, post a reply in the original location referencing the issue (use review-comment replies for inline comments and issue comments for review summaries/general comments), and resolve the thread when one exists. For general PR comments and review summary bodies (which have no thread), the reply alone is sufficient.
 4. For trivial `SKIPPED` items that are not included in the follow-up issue (duplicates, factually incorrect suggestions, status noise), still post rationale replies and resolve those threads.
-5. If there are zero deferred items, skip issue creation and behave like `f`.
+5. Skip issue creation and behave like `f` when there are zero deferred items.
 6. No additional commit is required unless later steps introduce local changes; if they do, commit and ask for push confirmation before pushing.
 7. Tell the user the PR is merge-ready.
 
@@ -253,23 +254,23 @@ If the user selects skipped/declined items for rationale replies, post those rep
 **For issue comments (general PR comments):**
 
 ```bash
-gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -f body="<response>"
+gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body="<response>"
 ```
 
 **For PR review comments (file-specific, replying to a thread):**
 
 ```bash
-gh api repos/${REPO}/pulls/{PR_NUMBER}/comments/{COMMENT_ID}/replies -X POST -f body="<response>"
+gh api repos/${REPO}/pulls/${PR_NUMBER}/comments/${COMMENT_ID}/replies -X POST -f body="<response>"
 ```
 
 Use the `/replies` endpoint for all existing review comments, including standalone top-level comments.
 
-**For review summary bodies (from `/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}`):**
+**For review summary bodies (from `/pulls/{PR_NUMBER}/reviews/${REVIEW_ID}`):**
 
 Review summary bodies do not have a `comment_id` and cannot be replied to via the `/replies` endpoint. Instead, post a general PR comment referencing the review:
 
 ```bash
-gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -f body="<response>"
+gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body="<response>"
 ```
 
 The response should briefly explain:
@@ -287,7 +288,7 @@ After posting the reply, resolve the review thread when all of the following are
 Use GitHub GraphQL to resolve the thread:
 
 ```bash
-gh api graphql -f query='mutation($threadId:ID!) { resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -f threadId="<THREAD_ID>"
+gh api graphql -f query='mutation($threadId:ID!) { resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -f threadId="${THREAD_ID}"
 ```
 
 Do not resolve a thread if the fix is still pending, if you are unsure whether the reviewer concern is satisfied, or if the user asked to leave the thread open.
@@ -366,7 +367,7 @@ Rules for follow-up issues:
 
 ## Step 10: Post PR Summary Comment
 
-After any chosen action or completed action chain (`f`, `f+i`, `d`, `r`, `m`, or direct item selection), post a consolidated PR comment that becomes the next default review cutoff.
+Post this comment only once, after the current run reaches its final stable stopping point — the full action or action chain (`f`, `f+i`, `d`, `r`, `m`, or direct item selection) is complete and no further pending work remains. Do not post after intermediate steps within a chain (for example, do not post after the `d` step of `f+i → d`).
 
 Rules for the summary comment:
 
@@ -396,7 +397,7 @@ summary_body_file="$(mktemp)"
   printf 'Next default scan starts after this comment. Say `check all reviews` to rescan the full PR.\n'
 } > "${summary_body_file}"
 
-gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST --input "${summary_body_file}"
+gh pr comment "${PR_NUMBER}" --repo "${REPO}" --body-file "${summary_body_file}"
 rm -f "${summary_body_file}"
 ```
 
