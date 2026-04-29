@@ -47,7 +47,7 @@ Execution flow when terminal access is available:
      - PR URL plus `check all reviews`
      - Specific review URL with `#pullrequestreview-...`
      - Specific issue comment URL with `#issuecomment-...`
-   - Detect the exact phrase `check all reviews`, set a `CHECK_ALL_REVIEWS` flag, and remove only that phrase before parsing the PR reference.
+   - Detect the phrase `check all reviews` (case-insensitive, trailing position only — must be the final tokens after the PR reference), set a `CHECK_ALL_REVIEWS` flag, and remove only that phrase before parsing the PR reference. If the phrase appears in any other position, do not treat it as an override; warn me and ask me to retry with the trailing form.
    - If the input is a full GitHub URL, extract the URL's `org/repo` before running `gh repo view`.
    - Extract the PR number and optional review/comment ID.
 
@@ -62,7 +62,7 @@ Execution flow when terminal access is available:
    - If `CHECK_ALL_REVIEWS` is true, ignore the cutoff and scan the full PR history.
    - If the input is a specific review URL or specific issue-comment URL, fetch that exact target even if it predates the latest summary comment.
    - Fetch the latest summary comment before collecting review data. Use a null-safe extraction so an empty result becomes an empty string (not JSON `null`):
-     `REVIEW_CUTOFF_AT=$(gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -rs '[.[].[] | select(((.body // "") | contains("<!-- address-review-summary -->"))) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end')`
+     `REVIEW_CUTOFF_AT=$(gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -rs '[.[].[] | select((.body // "") | contains("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end')`
    - An empty `REVIEW_CUTOFF_AT` means no prior summary comment; scan full history.
    - If `REVIEW_CUTOFF_AT` is non-empty and `CHECK_ALL_REVIEWS` is false, use it as the cutoff.
    - Use exact timestamps in user-facing status updates, for example `2026-04-01T20:14:33Z`.

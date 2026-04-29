@@ -10,9 +10,10 @@ Fetch review comments from a GitHub PR in this repository, triage them, and crea
 
 The user's input is: $ARGUMENTS
 
-First, detect whether the request includes the exact phrase `check all reviews`.
+First, detect whether the request includes the phrase `check all reviews` (case-insensitive, trailing position only — match it as the final tokens of the input, after the PR reference).
 
 - If it does, set a `CHECK_ALL_REVIEWS` flag and remove only that phrase before parsing the PR reference.
+- If the phrase appears in any other position (leading, embedded), do not treat it as an override; warn the user and ask them to retry with the trailing form.
 - Mention that override in the eventual PR summary comment so future runs have clear history.
 
 Then extract the PR number and optional review/comment ID from the remaining input:
@@ -323,8 +324,6 @@ MUST_FIX_SECTION="$(cat <<'EOF'
 EOF
 )"
 
-MUST_FIX_BLOCK="${MUST_FIX_SECTION}"
-
 DISCUSS_SECTION=""
 if [ -n "${DISCUSS_ITEMS}" ]; then
   DISCUSS_SECTION="### Discuss items
@@ -339,11 +338,11 @@ ${SKIPPED_ITEMS}
 "
 fi
 
-if [ -z "${MUST_FIX_BLOCK}${DISCUSS_SECTION}${SKIPPED_SECTION}" ]; then
+if [ -z "${MUST_FIX_SECTION}${DISCUSS_SECTION}${SKIPPED_SECTION}" ]; then
   echo "No deferred items found; skip follow-up issue creation."
 else
   SECTION_CONTENT=""
-  for section in "${MUST_FIX_BLOCK}" "${DISCUSS_SECTION}" "${SKIPPED_SECTION}"; do
+  for section in "${MUST_FIX_SECTION}" "${DISCUSS_SECTION}" "${SKIPPED_SECTION}"; do
     [ -z "${section}" ] && continue
     if [ -n "${SECTION_CONTENT}" ]; then
       SECTION_CONTENT="${SECTION_CONTENT}"$'\n\n'
@@ -360,7 +359,7 @@ else
     printf 'Original PR: https://github.com/%s/pull/%s\n' "${REPO}" "${PR_NUMBER}"
   } > "${issue_body_file}"
 
-  gh issue create --repo "${REPO}" --title "Follow-up: Review feedback from PR #${PR_NUMBER}" --body-file "${issue_body_file}"
+  FOLLOW_UP_URL=$(gh issue create --repo "${REPO}" --title "Follow-up: Review feedback from PR #${PR_NUMBER}" --body-file "${issue_body_file}")
 fi
 ```
 
@@ -373,6 +372,7 @@ Rules for follow-up issues:
 - Include the original reviewer username and comment link for each item
 - Include enough context that someone can act on the issue without re-reading the full PR review
 - After creating the issue, reference it in thread replies (e.g., "Tracked in #NNN for follow-up")
+- Capture the `gh issue create` output into `FOLLOW_UP_URL` (as shown above) so Step 10's summary comment can include the link
 - Return the issue URL to the user
 
 ## Step 10: Post PR Summary Comment
