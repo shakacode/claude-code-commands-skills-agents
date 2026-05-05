@@ -48,7 +48,7 @@ If `gh repo view` fails, ensure `gh` CLI is installed and authenticated (`gh aut
 
 For full-PR scans (plain PR number or PR URL with no specific review/comment anchor), default to reviewing only feedback posted after the latest PR summary comment created by this workflow.
 
-- The summary marker is a PR issue comment whose body contains `<!-- address-review-summary -->`.
+- The summary marker is a PR issue comment whose body starts with `<!-- address-review-summary -->` on its very first line. Requiring `startswith` (not `contains`) means a human comment that quotes or embeds the marker in prose is not mistaken for a checkpoint and cannot silently advance the cutoff.
 - If the user explicitly said `check all reviews`, ignore the cutoff and scan the full PR history.
 - If the input is a specific review URL or specific issue-comment URL, fetch that exact target even if it predates the latest summary comment.
 
@@ -57,7 +57,7 @@ Fetch the latest summary comment before collecting review data. Extract only the
 ```bash
 REVIEW_CUTOFF_AT=$(
   gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments \
-    | jq -rs '[.[].[] | select((.body // "") | contains("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end'
+    | jq -rs '[.[].[] | select((.body // "") | startswith("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end'
 )
 # Empty string → no prior summary comment; scan full PR history.
 ```
@@ -123,7 +123,7 @@ gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr={PR_NUMBER
 
 **Filtering comments:**
 
-- Never triage a prior summary checkpoint comment. Skip any issue comment whose body contains `<!-- address-review-summary -->`.
+- Never triage a prior summary checkpoint comment. Skip any issue comment whose body starts with `<!-- address-review-summary -->`.
 - Skip comments belonging to already-resolved threads (match via `thread_id` and `is_resolved` from the GraphQL response)
 - Do not create standalone triage items from comments where `in_reply_to_id` is set, but use reply text as the latest thread context when it updates or narrows the unresolved concern
 - When `REVIEW_CUTOFF_AT` is set, evaluate unresolved review threads by their latest activity timestamp, not only by the top-level comment timestamp
@@ -341,20 +341,23 @@ fi
 if [ -z "${MUST_FIX_SECTION}${DISCUSS_SECTION}${SKIPPED_SECTION}" ]; then
   echo "No deferred items found; skip follow-up issue creation."
 else
-  SECTION_CONTENT=""
-  for section in "${MUST_FIX_SECTION}" "${DISCUSS_SECTION}" "${SKIPPED_SECTION}"; do
-    [ -z "${section}" ] && continue
-    if [ -n "${SECTION_CONTENT}" ]; then
-      SECTION_CONTENT="${SECTION_CONTENT}"$'\n\n'
-    fi
-    SECTION_CONTENT="${SECTION_CONTENT}${section}"
-  done
   issue_body_file="$(mktemp)"
   trap 'rm -f "${issue_body_file}"' EXIT
+  # Build the issue body with printf only — avoids bash-only ANSI-C quoting
+  # (e.g., $'\n\n') which expands to a literal "$\n\n" under POSIX sh (dash).
   {
     printf '## Deferred review feedback from PR #%s\n\n' "${PR_NUMBER}"
     printf 'These items were triaged during review and deferred for follow-up.\n\n'
-    printf '%s\n\n' "${SECTION_CONTENT}"
+    first=1
+    for section in "${MUST_FIX_SECTION}" "${DISCUSS_SECTION}" "${SKIPPED_SECTION}"; do
+      [ -z "${section}" ] && continue
+      if [ "${first}" -eq 0 ]; then
+        printf '\n\n'
+      fi
+      printf '%s' "${section}"
+      first=0
+    done
+    printf '\n\n'
     printf -- '---\n'
     printf 'Original PR: https://github.com/%s/pull/%s\n' "${REPO}" "${PR_NUMBER}"
   } > "${issue_body_file}"
@@ -405,7 +408,7 @@ trap 'rm -f "${issue_body_file:-}" "${summary_body_file}"' EXIT
   printf '%s\n\n' "<bullets for must-fix/discuss outcomes, or - None.>"
   printf '### Skipped\n'
   printf '%s\n\n' "<bullets for skipped items, or - None.>"
-  if [ -n "${FOLLOW_UP_URL}" ]; then
+  if [ -n "${FOLLOW_UP_URL:-}" ]; then
     printf 'Follow-up issue: %s\n\n' "${FOLLOW_UP_URL}"
   fi
   printf 'Next default scan starts after this comment. Say `check all reviews` to rescan the full PR.\n'

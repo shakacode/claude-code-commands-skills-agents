@@ -31,7 +31,7 @@ Behavior rules:
   - the output of the required `gh api` commands.
 - Do not auto-fix everything. Stop after triage and wait for my selection.
 - Default to real issues only, not optional polish.
-- For full-PR scans, default to feedback after the latest PR summary comment whose body contains `<!-- address-review-summary -->`.
+- For full-PR scans, default to feedback after the latest PR summary comment whose body starts with `<!-- address-review-summary -->` on its first line.
 - If I say `check all reviews`, ignore that cutoff and rescan the full PR history.
 - If I give a specific review URL or specific issue-comment URL, fetch that exact target even if it predates the latest summary comment.
 - After selected items are addressed, reply to the original GitHub comments and resolve threads when appropriate.
@@ -58,11 +58,11 @@ Execution flow when terminal access is available:
 
 3. Determine scan window and summary cutoff:
    - For full-PR scans (plain PR number or PR URL with no specific review/comment anchor), default to reviewing only feedback posted after the latest PR summary comment created by this workflow.
-   - The summary marker is a PR issue comment whose body contains `<!-- address-review-summary -->`.
+   - The summary marker is a PR issue comment whose body starts with `<!-- address-review-summary -->` on its very first line. Use `startswith` (not `contains`) so a human comment that quotes or embeds the marker in prose is not mistaken for a checkpoint.
    - If `CHECK_ALL_REVIEWS` is true, ignore the cutoff and scan the full PR history.
    - If the input is a specific review URL or specific issue-comment URL, fetch that exact target even if it predates the latest summary comment.
    - Fetch the latest summary comment before collecting review data. Use a null-safe extraction so an empty result becomes an empty string (not JSON `null`):
-     `REVIEW_CUTOFF_AT=$(gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -rs '[.[].[] | select((.body // "") | contains("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end')`
+     `REVIEW_CUTOFF_AT=$(gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -rs '[.[].[] | select((.body // "") | startswith("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end')`
    - An empty `REVIEW_CUTOFF_AT` means no prior summary comment; scan full history.
    - If `REVIEW_CUTOFF_AT` is non-empty and `CHECK_ALL_REVIEWS` is false, use it as the cutoff.
    - Use exact timestamps in user-facing status updates, for example `2026-04-01T20:14:33Z`.
@@ -92,7 +92,7 @@ Execution flow when terminal access is available:
      `gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr={PR_NUMBER} -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'`
 
 5. Filter comments:
-   - Never triage a prior summary checkpoint comment. Skip any issue comment whose body contains `<!-- address-review-summary -->`.
+   - Never triage a prior summary checkpoint comment. Skip any issue comment whose body starts with `<!-- address-review-summary -->`.
    - Skip resolved threads.
    - Do not create standalone triage items from comments where `in_reply_to_id` is set, but use reply text as the latest thread context when it updates or narrows the unresolved concern.
    - When `REVIEW_CUTOFF_AT` is set, evaluate unresolved review threads by their latest activity timestamp, not only by the top-level comment timestamp.
