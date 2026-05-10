@@ -56,9 +56,10 @@ Execution flow when terminal access is available:
    - If the input is a full GitHub URL, extract the URL's `org/repo` before running `gh repo view`.
    - Extract the PR number and optional review/comment ID.
 
-2. Determine repository:
+2. Set repository and PR number:
    - If step 1 extracted `org/repo` from a full GitHub URL, use that as `REPO`.
    - Otherwise run: `REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)`
+   - Set `PR_NUMBER=<PR number parsed in step 1>` so every subsequent snippet can reference `${PR_NUMBER}` as a real shell variable.
    - If `gh` is unavailable or unauthenticated, stop and tell me to fix that first.
 
 3. Determine scan window and summary cutoff:
@@ -67,7 +68,7 @@ Execution flow when terminal access is available:
    - If `CHECK_ALL_REVIEWS` is true, ignore the cutoff and scan the full PR history.
    - If the input is a specific review URL or specific issue-comment URL, fetch that exact target even if it predates the latest summary comment.
    - Fetch the latest summary comment before collecting review data. Use a null-safe extraction so an empty result becomes an empty string (not JSON `null`):
-     `REVIEW_CUTOFF_AT=$(gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -rs '[.[].[] | select((.body // "") | startswith("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end')`
+     `REVIEW_CUTOFF_AT=$(gh api --paginate repos/${REPO}/issues/${PR_NUMBER}/comments | jq -rs '[.[].[] | select((.body // "") | startswith("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end')`
    - An empty `REVIEW_CUTOFF_AT` means no prior summary comment; scan full history.
    - If `REVIEW_CUTOFF_AT` is non-empty and `CHECK_ALL_REVIEWS` is false, use it as the cutoff.
    - Use exact timestamps in user-facing status updates, for example `2026-04-01T20:14:33Z`.
@@ -75,17 +76,18 @@ Execution flow when terminal access is available:
 
 4. Fetch review data:
    - Before fetching for full-PR scans, wait for any in-progress `claude-review` CI check on this PR so triage reflects the latest posted feedback. Skip this wait when the input is a specific review URL or specific issue-comment URL. If `gh pr checks` is unavailable or errors, log a warning and continue without blocking. Example loop:
-     `MAX_WAIT=180; WAITED=0; while [ "$(gh pr checks ${PR_NUMBER} --json name,bucket 2>/dev/null | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."; break; fi; echo "Waiting for in-progress claude-review CI to finish before triaging... (${WAITED}s elapsed)"; sleep 15; WAITED=$((WAITED + 15)); done`. Cap the total wait at `MAX_WAIT=180` seconds so a stalled runner cannot block triage indefinitely.
+     The loop polls `gh pr checks` every 15s, capped at `MAX_WAIT=180` seconds. Pass `--repo "${REPO}"` so cross-repo PR URLs target the parsed `${REPO}`, not the current checkout. When the cap is hit, log a warning and proceed with triage anyway so a stalled runner cannot block indefinitely:
+     `MAX_WAIT=180; WAITED=0; while [ "$(gh pr checks ${PR_NUMBER} --repo "${REPO}" --json name,bucket 2>/dev/null | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."; break; fi; echo "Waiting for in-progress claude-review CI to finish before triaging... (${WAITED}s elapsed)"; sleep 15; WAITED=$((WAITED + 15)); done`
    - Specific issue comment:
      `gh api repos/${REPO}/issues/comments/{COMMENT_ID} | jq '{body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}'`
    - Specific review:
-     `gh api repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID} | jq '{id: .id, body: .body, state: .state, user: .user.login, submitted_at: .submitted_at, html_url: .html_url}'`
-     `gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'`
+     `gh api repos/${REPO}/pulls/${PR_NUMBER}/reviews/{REVIEW_ID} | jq '{id: .id, body: .body, state: .state, user: .user.login, created_at: .submitted_at, html_url: .html_url}'`
+     `gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/reviews/{REVIEW_ID}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'`
    - If the review body contains actionable feedback, include it as an additional general comment. Review summary bodies cannot use the `/replies` endpoint; post those responses as general PR comments (see step 8).
    - Full PR:
-     `gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, created_at: .submitted_at, html_url: .html_url}]'`
-     `gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'`
-     `gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "issue", body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}]'`
+     `gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, created_at: .submitted_at, html_url: .html_url}]'`
+     `gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'`
+     `gh api --paginate repos/${REPO}/issues/${PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "issue", body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}]'`
    - Include actionable review summary bodies from `/pulls/{PR_NUMBER}/reviews` as additional general comments. Like specific review bodies, they cannot use the `/replies` endpoint and must be answered as general PR comments (see step 8).
    - When `REVIEW_CUTOFF_AT` is set for a full-PR scan:
      - Fetch the full datasets so you keep older context for unresolved threads.
@@ -96,7 +98,7 @@ Execution flow when terminal access is available:
    - For all review-comment paths, fetch thread metadata and match `thread_id` by `node_id`:
      `OWNER=${REPO%/*}`
      `NAME=${REPO#*/}`
-     `gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr={PR_NUMBER} -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'`
+     `gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr="${PR_NUMBER}" -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'`
 
 5. Filter comments:
    - Never triage a prior summary checkpoint comment. Skip any issue comment whose body starts with `<!-- address-review-summary -->`.
@@ -153,9 +155,9 @@ Execution flow when terminal access is available:
    - **Direct selection** (e.g., "1,2", "all must-fix", "1,3-5"): Address only selected items; if code changes were made, commit/push with confirmation before replying/resolving; then ask about remaining items.
    - Users can chain actions (e.g., `f+i` then `r7-9`).
    - Reply to each addressed review comment:
-     - Issue comments: `gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -f body="<response>"`
-     - Review comment replies: `gh api repos/${REPO}/pulls/{PR_NUMBER}/comments/{COMMENT_ID}/replies -X POST -f body="<response>"`
-     - Review summary body replies: `gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -f body="<response>"`
+     - Issue comments: `gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body="<response>"`
+     - Review comment replies: `gh api repos/${REPO}/pulls/${PR_NUMBER}/comments/{COMMENT_ID}/replies -X POST -f body="<response>"`
+     - Review summary body replies: `gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body="<response>"`
    - Resolve threads only when the issue is actually handled or explicitly declined with my approval:
      `gh api graphql -f query='mutation($threadId:ID!) { resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -f threadId="<THREAD_ID>"`
    - Do not resolve anything still in progress or uncertain.
@@ -179,7 +181,7 @@ Execution flow when terminal access is available:
    - Mention whether the run used the default cutoff or the explicit `check all reviews` override.
    - End with a note that future full-PR scans should start after this comment unless I say `check all reviews`.
    - Use exact timestamps in the summary when referring to the scan window.
-   - Post it with: `gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -F body=@<summary_body_file>`
+   - Post it with: `gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -F body=@<summary_body_file>`
 
 11. Merge-ready signal:
    - After `f`, tell me the PR is merge-ready only when no `DISCUSS` items remain unresolved

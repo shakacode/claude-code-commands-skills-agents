@@ -33,16 +33,18 @@ Then extract the PR number and optional review/comment ID from the remaining inp
 - Extract fragment ID after `#` (e.g., `pullrequestreview-123456789` → `123456789`)
 - If a full GitHub URL is provided, capture the URL's `org/repo` now so Step 2 can use it without calling `gh repo view`.
 
-## Step 2: Determine the Repository
+## Step 2: Set Repository and PR Number
 
 - If Step 1 extracted `org/repo` from a full GitHub URL, use that as `REPO`.
-- Otherwise, detect the repository from the current checkout:
+- Otherwise, detect the repository from the current checkout.
+- Set `PR_NUMBER` to the number parsed in Step 1.
 
 ```bash
-REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)  # or the org/repo extracted from the PR URL in Step 1
+PR_NUMBER=<the PR number parsed in Step 1>
 ```
 
-If `gh repo view` fails, ensure `gh` CLI is installed and authenticated (`gh auth status`).
+Every subsequent snippet uses `${REPO}` and `${PR_NUMBER}` as shell variables; setting them once here means no manual substitution is required later. If `gh repo view` fails (and no URL was supplied), ensure `gh` CLI is installed and authenticated (`gh auth status`).
 
 ## Step 3: Determine Scan Window and Summary Cutoff
 
@@ -56,7 +58,7 @@ Fetch the latest summary comment before collecting review data. Extract only the
 
 ```bash
 REVIEW_CUTOFF_AT=$(
-  gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments \
+  gh api --paginate repos/${REPO}/issues/${PR_NUMBER}/comments \
     | jq -rs '[.[].[] | select((.body // "") | startswith("<!-- address-review-summary -->")) | {id: .id, created_at: .created_at, html_url: .html_url}] | sort_by(.created_at) | last | if . == null then "" else .created_at end'
 )
 # Empty string → no prior summary comment; scan full PR history.
@@ -76,11 +78,12 @@ Before fetching, wait for any in-progress `claude-review` CI run on this PR so t
 
 ```bash
 # Block while a claude-review check is still queued/running (bucket == "pending").
+# Pass --repo so cross-repo PR URLs target the parsed REPO, not the current checkout.
 # The fallback `|| echo 0` makes the loop exit gracefully if `gh pr checks` errors.
 # `MAX_WAIT` caps the total wait so a stalled runner cannot block triage indefinitely.
 MAX_WAIT=180
 WAITED=0
-while [ "$(gh pr checks ${PR_NUMBER} --json name,bucket 2>/dev/null \
+while [ "$(gh pr checks ${PR_NUMBER} --repo "${REPO}" --json name,bucket 2>/dev/null \
   | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do
   if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then
     echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."
@@ -102,10 +105,10 @@ gh api repos/${REPO}/issues/comments/{COMMENT_ID} | jq '{body: .body, user: .use
 
 ```bash
 # Review body (often contains summary feedback)
-gh api repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID} | jq '{id: .id, body: .body, state: .state, user: .user.login, submitted_at: .submitted_at, html_url: .html_url}'
+gh api repos/${REPO}/pulls/${PR_NUMBER}/reviews/{REVIEW_ID} | jq '{id: .id, body: .body, state: .state, user: .user.login, created_at: .submitted_at, html_url: .html_url}'
 
 # Inline comments for this review
-gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/reviews/{REVIEW_ID}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
 ```
 
 Include the review body as a general comment when it contains actionable feedback. When the review body contains actionable feedback, note that it cannot be replied to via the `/replies` endpoint — responses to review summary bodies must be posted as general PR comments (see Step 8).
@@ -114,13 +117,13 @@ Include the review body as a general comment when it contains actionable feedbac
 
 ```bash
 # Review summary bodies (can contain actionable feedback even without inline comments)
-gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, created_at: .submitted_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/reviews | jq -s '[.[].[] | select((.body // "") != "") | {id: .id, type: "review_summary", body: .body, state: .state, user: .user.login, created_at: .submitted_at, html_url: .html_url}]'
 
 # Inline code review comments
-gh api --paginate repos/${REPO}/pulls/{PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/pulls/${PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "review", path: .path, body: .body, line: .line, start_line: .start_line, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at, html_url: .html_url}]'
 
 # General PR discussion comments (not tied to specific lines)
-gh api --paginate repos/${REPO}/issues/{PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "issue", body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}]'
+gh api --paginate repos/${REPO}/issues/${PR_NUMBER}/comments | jq -s '[.[].[] | {id: .id, node_id: .node_id, type: "issue", body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}]'
 ```
 
 Include actionable review summary bodies from `/pulls/{PR_NUMBER}/reviews` as additional general comments. Like specific review bodies, they cannot be replied to via the `/replies` endpoint and must be answered as general PR comments (see Step 8).
@@ -138,7 +141,7 @@ When `REVIEW_CUTOFF_AT` is set for a full-PR scan:
 ```bash
 OWNER=${REPO%/*}
 NAME=${REPO#*/}
-gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr={PR_NUMBER} -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'
+gh api graphql --paginate -f owner="${OWNER}" -f name="${NAME}" -F pr="${PR_NUMBER}" -f query='query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) { repository(owner:$owner, name:$name) { pullRequest(number:$pr) { reviewThreads(first:100, after:$endCursor) { nodes { id isResolved comments(first:100) { nodes { id databaseId } } } pageInfo { hasNextPage endCursor } } } } }' | jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | {thread_id: .id, is_resolved: .isResolved, comments: [.comments.nodes[] | {node_id: .id, id: .databaseId}]}]'
 ```
 
 **Filtering comments:**
@@ -281,13 +284,13 @@ If the user selects skipped/declined items for rationale replies, post those rep
 **For issue comments (general PR comments):**
 
 ```bash
-gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -f body="<response>"
+gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body="<response>"
 ```
 
 **For PR review comments (file-specific, replying to a thread):**
 
 ```bash
-gh api repos/${REPO}/pulls/{PR_NUMBER}/comments/{COMMENT_ID}/replies -X POST -f body="<response>"
+gh api repos/${REPO}/pulls/${PR_NUMBER}/comments/{COMMENT_ID}/replies -X POST -f body="<response>"
 ```
 
 Use the `/replies` endpoint for all existing review comments, including standalone top-level comments.
@@ -297,7 +300,7 @@ Use the `/replies` endpoint for all existing review comments, including standalo
 Review summary bodies do not have a `comment_id` and cannot be replied to via the `/replies` endpoint. Instead, post a general PR comment referencing the review:
 
 ```bash
-gh api repos/${REPO}/issues/{PR_NUMBER}/comments -X POST -f body="<response>"
+gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body="<response>"
 ```
 
 The response should briefly explain:
@@ -324,7 +327,9 @@ If the user explicitly asks to close out a `DISCUSS` or `SKIPPED` item, reply wi
 
 ## Step 9: Create Follow-Up Issue (when requested)
 
-When the user chooses `f+i`, `m`, or explicitly asks for a follow-up issue, create a GitHub issue that bundles deferred items:
+When the user chooses `f+i`, `m`, or explicitly asks for a follow-up issue, create a GitHub issue that bundles deferred items.
+
+The cleanup trap below is a named `_cleanup_addr_review` function rather than an inline `trap '...' EXIT` so Step 10's standalone path can redefine the same function without divergence. Installing the trap up front (rather than letting Step 10 replace it) closes the race window where an early exit between Step 9 and Step 10 would skip cleanup of the second temp file.
 
 ```bash
 # Template inputs: replace each <...> placeholder before running this snippet.
@@ -362,13 +367,7 @@ if [ -z "${MUST_FIX_SECTION}${DISCUSS_SECTION}${SKIPPED_SECTION}" ]; then
   echo "No deferred items found; skip follow-up issue creation."
 else
   issue_body_file="$(mktemp)"
-  # Cleanup function covers both this step's temp file and Step 10's
-  # not-yet-created summary_body_file. Defined as a function (rather than an
-  # inline trap one-liner) so the same definition can be re-applied in Step 10's
-  # standalone path without divergence. Each `trap ... EXIT` replaces the prior
-  # handler in bash, so installing the trap up front (rather than letting
-  # Step 10 replace it) closes the race window where an early exit between
-  # here and Step 10 would skip cleanup of the second file.
+  # Cleanup covers both temp files; Step 10 redefines _cleanup_addr_review for its standalone path.
   _cleanup_addr_review() {
     [ -n "${issue_body_file:-}" ]   && rm -f "${issue_body_file}"
     [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"
@@ -423,15 +422,11 @@ Rules for the summary comment:
 - Mention whether the run used the default cutoff or the explicit `check all reviews` override.
 - End with a note that future full-PR scans should start after this comment unless the user says `check all reviews`.
 
-Suggested structure:
+Suggested structure. `_cleanup_addr_review` is redefined here to cover the standalone-Step-10 path (when Step 9 was skipped and `issue_body_file` is unset). Redefining the same function is harmless if Step 9 already defined it; the `[ -n ... ]` guards keep `rm -f ""` out of the picture on shells that reject empty path arguments.
 
 ```bash
 summary_body_file="$(mktemp)"
-# Mirror the cleanup function from Step 9 so the standalone-Step-10 path (no
-# follow-up issue, so Step 9 was skipped and `issue_body_file` is unset) is
-# also covered. Redefining the same function is harmless if Step 9 already
-# defined it. The `[ -n ... ]` guards keep `rm -f ""` out of the picture on
-# shells that reject empty path arguments.
+# Cleanup mirrors Step 9's definition for the standalone-Step-10 path.
 _cleanup_addr_review() {
   [ -n "${issue_body_file:-}" ]   && rm -f "${issue_body_file}"
   [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"
