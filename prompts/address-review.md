@@ -75,7 +75,7 @@ Execution flow when terminal access is available:
 
 4. Fetch review data:
    - Before fetching for full-PR scans, wait for any in-progress `claude-review` CI check on this PR so triage reflects the latest posted feedback. Skip this wait when the input is a specific review URL or specific issue-comment URL. If `gh pr checks` is unavailable or errors, log a warning and continue without blocking. Example loop:
-     `while [ "$(gh pr checks ${PR_NUMBER} --json name,bucket 2>/dev/null | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do echo "Waiting for in-progress claude-review CI to finish before triaging..."; sleep 15; done`
+     `MAX_WAIT=180; WAITED=0; while [ "$(gh pr checks ${PR_NUMBER} --json name,bucket 2>/dev/null | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."; break; fi; echo "Waiting for in-progress claude-review CI to finish before triaging... (${WAITED}s elapsed)"; sleep 15; WAITED=$((WAITED + 15)); done`. Cap the total wait at `MAX_WAIT=180` seconds so a stalled runner cannot block triage indefinitely.
    - Specific issue comment:
      `gh api repos/${REPO}/issues/comments/{COMMENT_ID} | jq '{body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}'`
    - Specific review:

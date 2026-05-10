@@ -77,10 +77,18 @@ Before fetching, wait for any in-progress `claude-review` CI run on this PR so t
 ```bash
 # Block while a claude-review check is still queued/running (bucket == "pending").
 # The fallback `|| echo 0` makes the loop exit gracefully if `gh pr checks` errors.
+# `MAX_WAIT` caps the total wait so a stalled runner cannot block triage indefinitely.
+MAX_WAIT=180
+WAITED=0
 while [ "$(gh pr checks ${PR_NUMBER} --json name,bucket 2>/dev/null \
   | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do
-  echo "Waiting for in-progress claude-review CI to finish before triaging..."
+  if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then
+    echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."
+    break
+  fi
+  echo "Waiting for in-progress claude-review CI to finish before triaging... (${WAITED}s elapsed)"
   sleep 15
+  WAITED=$((WAITED + 15))
 done
 ```
 
@@ -354,12 +362,18 @@ if [ -z "${MUST_FIX_SECTION}${DISCUSS_SECTION}${SKIPPED_SECTION}" ]; then
   echo "No deferred items found; skip follow-up issue creation."
 else
   issue_body_file="$(mktemp)"
-  # Install one combined trap that covers both this step's temp file and the
-  # not-yet-created summary_body_file. Each `trap ... EXIT` replaces the prior
-  # handler in bash, so installing the combined trap up front (rather than
-  # letting Step 10 replace this one) closes the race window where an early
-  # exit between here and Step 10 would skip cleanup of the second file.
-  trap '[ -n "${issue_body_file:-}" ] && rm -f "${issue_body_file}"; [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"' EXIT
+  # Cleanup function covers both this step's temp file and Step 10's
+  # not-yet-created summary_body_file. Defined as a function (rather than an
+  # inline trap one-liner) so the same definition can be re-applied in Step 10's
+  # standalone path without divergence. Each `trap ... EXIT` replaces the prior
+  # handler in bash, so installing the trap up front (rather than letting
+  # Step 10 replace it) closes the race window where an early exit between
+  # here and Step 10 would skip cleanup of the second file.
+  _cleanup_addr_review() {
+    [ -n "${issue_body_file:-}" ]   && rm -f "${issue_body_file}"
+    [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"
+  }
+  trap _cleanup_addr_review EXIT
   # Build the issue body with printf only — avoids bash-only ANSI-C quoting
   # (e.g., $'\n\n') which expands to a literal "$\n\n" under POSIX sh (dash).
   {
@@ -413,15 +427,23 @@ Suggested structure:
 
 ```bash
 summary_body_file="$(mktemp)"
-# Mirror the combined trap from Step 9 so the standalone-Step-10 path (no
+# Mirror the cleanup function from Step 9 so the standalone-Step-10 path (no
 # follow-up issue, so Step 9 was skipped and `issue_body_file` is unset) is
-# also covered. The `[ -n ... ]` guards keep `rm -f ""` out of the picture
-# on shells that reject empty path arguments.
-trap '[ -n "${issue_body_file:-}" ] && rm -f "${issue_body_file}"; [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"' EXIT
+# also covered. Redefining the same function is harmless if Step 9 already
+# defined it. The `[ -n ... ]` guards keep `rm -f ""` out of the picture on
+# shells that reject empty path arguments.
+_cleanup_addr_review() {
+  [ -n "${issue_body_file:-}" ]   && rm -f "${issue_body_file}"
+  [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"
+}
+trap _cleanup_addr_review EXIT
+# Set SCAN_SCOPE before this block, e.g.:
+#   SCAN_SCOPE="since previous summary at ${REVIEW_CUTOFF_AT}"  # cutoff active
+#   SCAN_SCOPE="full history via check all reviews"              # CHECK_ALL_REVIEWS set
 {
   printf '<!-- address-review-summary -->\n'
   printf '## Address-review summary\n\n'
-  printf 'Scan scope: %s\n\n' "<since previous summary at 2026-04-01T20:14:33Z | full history via check all reviews>"
+  printf 'Scan scope: %s\n\n' "${SCAN_SCOPE}"
   printf '### Mattered\n'
   printf '%s\n\n' "<bullets for must-fix/discuss outcomes, or - None.>"
   printf '### Skipped\n'
