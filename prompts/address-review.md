@@ -15,6 +15,11 @@ Paste the prompt below into your coding assistant and replace `{{PR_REFERENCE}}`
 
 If the assistant has terminal access with `gh`, it should execute the workflow directly. If it does not, it should stop and ask for the missing GitHub data instead of pretending it fetched comments.
 
+Notes:
+
+- `check all reviews` must follow the PR reference (trailing position only). Writing it before or embedded in the PR reference triggers a warning and no rescan.
+- For full-PR scans, the workflow waits for any in-progress `claude-review` CI run on the PR before fetching, so the triage reflects the latest posted feedback. Specific review/issue-comment URLs skip this wait.
+
 ## Prompt
 
 ````text
@@ -69,6 +74,8 @@ Execution flow when terminal access is available:
    - If no items survive the cutoff, tell me no new review feedback was found since that summary comment and remind me I can say `check all reviews`.
 
 4. Fetch review data:
+   - Before fetching for full-PR scans, wait for any in-progress `claude-review` CI check on this PR so triage reflects the latest posted feedback. Skip this wait when the input is a specific review URL or specific issue-comment URL. If `gh pr checks` is unavailable or errors, log a warning and continue without blocking. Example loop:
+     `while [ "$(gh pr checks ${PR_NUMBER} --json name,bucket 2>/dev/null | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do echo "Waiting for in-progress claude-review CI to finish before triaging..."; sleep 15; done`
    - Specific issue comment:
      `gh api repos/${REPO}/issues/comments/{COMMENT_ID} | jq '{body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}'`
    - Specific review:

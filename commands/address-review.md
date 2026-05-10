@@ -72,6 +72,18 @@ Cutoff rules:
 
 ## Step 4: Fetch Review Comments
 
+Before fetching, wait for any in-progress `claude-review` CI run on this PR so the triage reflects the latest posted feedback. Skip the wait if the user provided a specific review URL or specific issue-comment URL — fetch that exact target immediately. If `gh pr checks` is unavailable or returns an error, log a warning and continue without blocking.
+
+```bash
+# Block while a claude-review check is still queued/running (bucket == "pending").
+# The fallback `|| echo 0` makes the loop exit gracefully if `gh pr checks` errors.
+while [ "$(gh pr checks ${PR_NUMBER} --json name,bucket 2>/dev/null \
+  | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do
+  echo "Waiting for in-progress claude-review CI to finish before triaging..."
+  sleep 15
+done
+```
+
 **If a specific issue comment ID is provided (`#issuecomment-...`):**
 
 ```bash
@@ -342,20 +354,25 @@ if [ -z "${MUST_FIX_SECTION}${DISCUSS_SECTION}${SKIPPED_SECTION}" ]; then
   echo "No deferred items found; skip follow-up issue creation."
 else
   issue_body_file="$(mktemp)"
-  trap 'rm -f "${issue_body_file}"' EXIT
+  # Install one combined trap that covers both this step's temp file and the
+  # not-yet-created summary_body_file. Each `trap ... EXIT` replaces the prior
+  # handler in bash, so installing the combined trap up front (rather than
+  # letting Step 10 replace this one) closes the race window where an early
+  # exit between here and Step 10 would skip cleanup of the second file.
+  trap '[ -n "${issue_body_file:-}" ] && rm -f "${issue_body_file}"; [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"' EXIT
   # Build the issue body with printf only — avoids bash-only ANSI-C quoting
   # (e.g., $'\n\n') which expands to a literal "$\n\n" under POSIX sh (dash).
   {
     printf '## Deferred review feedback from PR #%s\n\n' "${PR_NUMBER}"
     printf 'These items were triaged during review and deferred for follow-up.\n\n'
-    first=1
+    printed_first=0
     for section in "${MUST_FIX_SECTION}" "${DISCUSS_SECTION}" "${SKIPPED_SECTION}"; do
       [ -z "${section}" ] && continue
-      if [ "${first}" -eq 0 ]; then
+      if [ "${printed_first}" -eq 1 ]; then
         printf '\n\n'
       fi
       printf '%s' "${section}"
-      first=0
+      printed_first=1
     done
     printf '\n\n'
     printf -- '---\n'
@@ -396,10 +413,11 @@ Suggested structure:
 
 ```bash
 summary_body_file="$(mktemp)"
-# Include ${issue_body_file:-} so this trap also cleans up the Step 9 temp file
-# when `f+i` runs both steps in the same shell (each `trap ... EXIT` replaces
-# the previous handler in bash).
-trap 'rm -f "${issue_body_file:-}" "${summary_body_file}"' EXIT
+# Mirror the combined trap from Step 9 so the standalone-Step-10 path (no
+# follow-up issue, so Step 9 was skipped and `issue_body_file` is unset) is
+# also covered. The `[ -n ... ]` guards keep `rm -f ""` out of the picture
+# on shells that reject empty path arguments.
+trap '[ -n "${issue_body_file:-}" ] && rm -f "${issue_body_file}"; [ -n "${summary_body_file:-}" ] && rm -f "${summary_body_file}"' EXIT
 {
   printf '<!-- address-review-summary -->\n'
   printf '## Address-review summary\n\n'
@@ -483,6 +501,8 @@ Or pick items by number: "1,2", "all must-fix", "1,3-5"
 
 # Important Notes
 
+- `check all reviews` must follow the PR reference (trailing position only). Writing it before or embedded in the PR reference triggers a warning and no rescan
+- Before fetching review data, wait for any in-progress `claude-review` CI run on the PR so triage reflects the latest posted feedback (skip the wait when targeting a specific review/issue-comment URL)
 - Automatically detect the repository using `gh repo view` for the current working directory
 - If a GitHub URL is provided, extract the org/repo from the URL
 - Include file path and line number in each todo for easy navigation (when available)
