@@ -182,7 +182,7 @@ Execution flow when terminal access is available:
    - Mention whether the run used the default cutoff or the explicit `check all reviews` override.
    - End with a note that future full-PR scans should start after this comment unless I say `check all reviews`.
    - Use exact timestamps in the summary when referring to the scan window.
-   - Post it with: `gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body=@<summary_body_file>`
+   - Post it with: `gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body=@"${summary_body_file}"`
 
 11. Merge-ready signal:
    - After `f`, tell me the PR is merge-ready only when no `DISCUSS` items remain unresolved
