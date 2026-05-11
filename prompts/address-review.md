@@ -77,7 +77,7 @@ Execution flow when terminal access is available:
 4. Fetch review data:
    - Before fetching for full-PR scans, wait for any in-progress `claude-review` CI check on this PR so triage reflects the latest posted feedback. Skip this wait when the input is a specific review URL or specific issue-comment URL. If `gh pr checks` is unavailable or errors, log a warning and continue without blocking. Example loop:
      The loop polls `gh pr checks` every 15s, capped at `MAX_WAIT=180` seconds. Pass `--repo "${REPO}"` so cross-repo PR URLs target the parsed `${REPO}`, not the current checkout. When the cap is hit, log a warning and proceed with triage anyway so a stalled runner cannot block indefinitely:
-     `MAX_WAIT=180; WAITED=0; while [ "$(gh pr checks ${PR_NUMBER} --repo "${REPO}" --json name,bucket 2>/dev/null | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."; break; fi; echo "Waiting for in-progress claude-review CI to finish before triaging... (${WAITED}s elapsed)"; sleep 15; WAITED=$((WAITED + 15)); done`
+     `MAX_WAIT=180; WAITED=0; while [ "$(gh pr checks "${PR_NUMBER}" --repo "${REPO}" --json name,bucket 2>/dev/null | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."; break; fi; echo "Waiting for in-progress claude-review CI to finish before triaging... (${WAITED}s elapsed)"; sleep 15; WAITED=$((WAITED + 15)); done`
    - Specific issue comment:
      `gh api repos/${REPO}/issues/comments/{COMMENT_ID} | jq '{body: .body, user: .user.login, created_at: .created_at, html_url: .html_url}'`
    - Specific review:
@@ -164,6 +164,7 @@ Execution flow when terminal access is available:
    - Ask for push confirmation before running `git push`.
 
 9. Create follow-up issue (when `f+i` or `m` is chosen):
+   - **Run steps 9 and 10 in a single shell call.** They share `${FOLLOW_UP_URL}` (set here, consumed in step 10), `${issue_body_file}`/`${summary_body_file}` temp files, and the EXIT cleanup trap. Agents that execute each Bash tool call in a fresh subshell will lose `${FOLLOW_UP_URL}` between calls and fire the cleanup trap prematurely; combine both steps into one heredoc/chained invocation, or capture step 9's `FOLLOW_UP_URL` from stdout and pass it explicitly into step 10's command.
    - Use `gh issue create --repo "${REPO}"` with title "Follow-up: Review feedback from PR #N"
    - For `f+i`, include discuss items and non-trivial skipped items (must-fix is already addressed)
    - For `m`, include deferred must-fix items, discuss items, and non-trivial skipped items
@@ -181,7 +182,7 @@ Execution flow when terminal access is available:
    - Mention whether the run used the default cutoff or the explicit `check all reviews` override.
    - End with a note that future full-PR scans should start after this comment unless I say `check all reviews`.
    - Use exact timestamps in the summary when referring to the scan window.
-   - Post it with: `gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -F body=@<summary_body_file>`
+   - Post it with: `gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body=@<summary_body_file>`
 
 11. Merge-ready signal:
    - After `f`, tell me the PR is merge-ready only when no `DISCUSS` items remain unresolved

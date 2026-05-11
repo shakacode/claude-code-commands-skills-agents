@@ -83,7 +83,7 @@ Before fetching, wait for any in-progress `claude-review` CI run on this PR so t
 # `MAX_WAIT` caps the total wait so a stalled runner cannot block triage indefinitely.
 MAX_WAIT=180
 WAITED=0
-while [ "$(gh pr checks ${PR_NUMBER} --repo "${REPO}" --json name,bucket 2>/dev/null \
+while [ "$(gh pr checks "${PR_NUMBER}" --repo "${REPO}" --json name,bucket 2>/dev/null \
   | jq '[.[] | select((.name | test("claude.?review"; "i")) and (.bucket == "pending"))] | length' 2>/dev/null || echo 0)" -gt 0 ]; do
   if [ "${WAITED}" -ge "${MAX_WAIT}" ]; then
     echo "Warning: claude-review CI still pending after ${MAX_WAIT}s — proceeding with triage anyway."
@@ -329,6 +329,8 @@ If the user explicitly asks to close out a `DISCUSS` or `SKIPPED` item, reply wi
 
 When the user chooses `f+i`, `m`, or explicitly asks for a follow-up issue, create a GitHub issue that bundles deferred items.
 
+**Run Steps 9 and 10 in a single shell call.** They share state — `${FOLLOW_UP_URL}` set in Step 9 is consumed by Step 10's summary template, `${issue_body_file}` and `${summary_body_file}` share an EXIT trap, and the `_cleanup_addr_review` function is defined once. Agents that execute each Bash tool call in a fresh subshell (the default in Claude Code and similar harnesses) will lose `${FOLLOW_UP_URL}` between calls and trigger Step 9's cleanup trap before Step 10 runs. Combine both steps into one heredoc/chained invocation, or capture Step 9's `FOLLOW_UP_URL` from stdout and pass it explicitly into Step 10's invocation.
+
 The cleanup trap below is a named `_cleanup_addr_review` function rather than an inline `trap '...' EXIT` so Step 10's standalone path can redefine the same function without divergence. Installing the trap up front (rather than letting Step 10 replace it) closes the race window where an early exit between Step 9 and Step 10 would skip cleanup of the second temp file.
 
 ```bash
@@ -422,7 +424,7 @@ Rules for the summary comment:
 - Mention whether the run used the default cutoff or the explicit `check all reviews` override.
 - End with a note that future full-PR scans should start after this comment unless the user says `check all reviews`.
 
-Suggested structure. `_cleanup_addr_review` is redefined here to cover the standalone-Step-10 path (when Step 9 was skipped and `issue_body_file` is unset). Redefining the same function is harmless if Step 9 already defined it; the `[ -n ... ]` guards keep `rm -f ""` out of the picture on shells that reject empty path arguments.
+Suggested structure. As called out in Step 9, run Steps 9 and 10 in the same shell call so `${FOLLOW_UP_URL}` and the EXIT trap persist; otherwise capture `FOLLOW_UP_URL` from Step 9's stdout and pass it in explicitly. `_cleanup_addr_review` is redefined here to cover the standalone-Step-10 path (when Step 9 was skipped and `issue_body_file` is unset). Redefining the same function is harmless if Step 9 already defined it; the `[ -n ... ]` guards keep `rm -f ""` out of the picture on shells that reject empty path arguments.
 
 ```bash
 summary_body_file="$(mktemp)"
@@ -449,7 +451,7 @@ trap _cleanup_addr_review EXIT
   printf 'Next default scan starts after this comment. Say `check all reviews` to rescan the full PR.\n'
 } > "${summary_body_file}"
 
-gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -F body=@"${summary_body_file}"
+gh api repos/${REPO}/issues/${PR_NUMBER}/comments -X POST -f body=@"${summary_body_file}"
 ```
 
 Use exact dates/timestamps in this comment when referring to the cutoff or scan window.
